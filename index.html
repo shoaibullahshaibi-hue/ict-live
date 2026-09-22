@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0a0a0a">
+    <title>ICT Scanner</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: #0a0a0a; color: #fff; font-family: -apple-system, sans-serif; padding: 10px; }
+        h2 { font-size: 14px; color: #00ff88; margin-bottom: 8px; text-align: center; }
+        .scan-status { text-align: center; font-size: 10px; color: #555; margin-bottom: 10px; }
+        .pulse { display: inline-block; width: 6px; height: 6px; background: #00ff88; border-radius: 50%; animation: pulse 1.5s infinite; margin-right: 5px; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+        .pairs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+        .pair-card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 8px; padding: 8px; }
+        .pair-name { font-size: 11px; font-weight: 700; color: #888; margin-bottom: 4px; }
+        .pair-price { font-size: 13px; font-weight: 600; }
+        .pair-change { font-size: 10px; margin-top: 2px; }
+        .positive { color: #00ff88; } .negative { color: #ff4444; }
+        .section-title { font-size: 12px; color: #888; margin-bottom: 8px; border-bottom: 1px solid #222; padding-bottom: 4px; }
+        .setup-card { background: #1a1a1a; border-radius: 8px; padding: 10px; margin-bottom: 8px; border-left: 3px solid #00ff88; }
+        .setup-card.short { border-left-color: #ff4444; }
+        .setup-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+        .setup-pair { font-size: 13px; font-weight: 700; }
+        .long-badge { background: rgba(0,255,136,0.15); color: #00ff88; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px; }
+        .short-badge { background: rgba(255,68,68,0.15); color: #ff4444; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px; }
+        .setup-levels { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; margin-top: 6px; }
+        .level-box { background: #111; border-radius: 4px; padding: 4px 6px; text-align: center; }
+        .level-label { font-size: 9px; color: #666; display: block; }
+        .level-value { font-size: 11px; font-weight: 600; }
+        .entry-val { color: #fff; } .sl-val { color: #ff4444; } .tp-val { color: #00ff88; }
+        .setup-meta { font-size: 9px; color: #555; margin-top: 5px; }
+        .rr-badge { display: inline-block; background: #222; padding: 1px 5px; border-radius: 3px; font-size: 9px; color: #aaa; margin-left: 5px; }
+        .no-setups { text-align: center; color: #444; font-size: 12px; padding: 20px; }
+        .alert-btn { width: 100%; padding: 10px; background: #1a1a1a; color: #00ff88; border: 1px solid #00ff88; border-radius: 8px; font-size: 12px; font-weight: 700; margin-bottom: 10px; cursor: pointer; }
+        .alert-btn.active { background: #00ff88; color: #000; }
+        .alert-log { background: #111; border-radius: 8px; padding: 8px; margin-top: 10px; max-height: 150px; overflow-y: auto; }
+        .alert-log-title { font-size: 10px; color: #555; margin-bottom: 6px; }
+        .alert-item { font-size: 10px; padding: 3px 0; border-bottom: 1px solid #1a1a1a; }
+        .alert-item.long { color: #00ff88; } .alert-item.short { color: #ff4444; }
+    </style>
+</head>
+<body>
+    <h2>⚡ ICT LIVE SCANNER</h2>
+    <button class="alert-btn" id="alert-btn" onclick="toggleAlerts()">🔔 Enable Alerts</button>
+    <div class="scan-status"><span class="pulse"></span><span id="status-text">Connecting...</span></div>
+    <div class="pairs-grid" id="pairs-grid"></div>
+    <div class="section-title">🎯 ACTIVE SETUPS</div>
+    <div id="setups-container"><div class="no-setups">Scanning...</div></div>
+    <div class="alert-log">
+        <div class="alert-log-title">📋 ALERT HISTORY</div>
+        <div id="alert-log-items"><div style="font-size:10px;color:#333">No alerts yet</div></div>
+    </div>
+<script>
+const PAIRS=[
+    {symbol:'btcusdt',name:'BTC/USDT',binance:'BTCUSDT'},
+    {symbol:'ethusdt',name:'ETH/USDT',binance:'ETHUSDT'},
+    {symbol:'solusdt',name:'SOL/USDT',binance:'SOLUSDT'},
+    {symbol:'taousdt',name:'TAO/USDT',binance:'TAOUSDT'},
+    {symbol:'avaxusdt',name:'AVAX/USDT',binance:'AVAXUSDT'},
+    {symbol:'xauusdt',name:'XAU/USDT',binance:'XAUUSDT'}
+];
+let activeSetups=[],alertsEnabled=false,notifPermission=false,alertedSetups=new Set(),alertLog=[];
+async function toggleAlerts(){
+    if(!alertsEnabled){
+        if('Notification' in window){const p=await Notification.requestPermission();notifPermission=p==='granted';}
+        alertsEnabled=true;
+        document.getElementById('alert-btn').textContent='🔔 Alerts ON — Tap to Disable';
+        document.getElementById('alert-btn').classList.add('active');
+        playBeep(800,200);
+    }else{
+        alertsEnabled=false;
+        document.getElementById('alert-btn').textContent='🔔 Enable Alerts';
+        document.getElementById('alert-btn').classList.remove('active');
+    }
+}
+function playBeep(f,d){try{const c=new(window.AudioContext||window.webkitAudioContext)(),o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.frequency.value=f;o.type='sine';g.gain.setValueAtTime(0.3,c.currentTime);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+d/1000);o.start(c.currentTime);o.stop(c.currentTime+d/1000);}catch(e){}}
+function sendAlert(s){
+    const key=s.pair+s.direction+s.entry;
+    if(alertedSetups.has(key))return;
+    alertedSetups.add(key);
+    if(s.direction==='LONG'){playBeep(880,300);setTimeout(()=>playBeep(1100,300),350);}
+    else{playBeep(440,300);setTimeout(()=>playBeep(330,400),350);}
+    if(notifPermission)new Notification('ICT: '+s.pair,{body:s.direction+' E:'+s.entry+' SL:'+s.sl+' TP:'+s.tp});
+    alertLog.unshift({text:s.pair+' '+s.direction+' E:'+s.entry+' SL:'+s.sl+' TP:'+s.tp,type:s.direction.toLowerCase(),time:new Date().toLocaleTimeString()});
+    if(alertLog.length>20)alertLog.pop();
+    renderAlertLog();
+}
+function renderAlertLog(){
+    document.getElementById('alert-log-items').innerHTML=alertLog.length?alertLog.map(a=>`<div class="alert-item ${a.type}">[${a.time}] ${a.text}</div>`).join(''):'<div style="font-size:10px;color:#333">No alerts yet</div>';
+}
+function initCards(){
+    document.getElementById('pairs-grid').innerHTML=PAIRS.map(p=>`<div class="pair-card"><div class="pair-name">${p.name}</div><div class="pair-price" id="price-${p.symbol}">--</div><div class="pair-change" id="change-${p.symbol}">--</div></div>`).join('');
+}
+function updateCard(sym,price,open){
+    const p=document.getElementById('price-'+sym),c=document.getElementById('change-'+sym);
+    if(!p)return;
+    const dec=price>500?2:price>10?3:4;
+    p.textContent=price.toLocaleString('en-US',{minimumFractionDigits:dec,maximumFractionDigits:dec});
+    if(open){const pct=((price-open)/open*100).toFixed(2);c.textContent=(pct>=0?'+':'')+pct+'%';c.className='pair-change '+(pct>=0?'positive':'negative');}
+}
+async function fetchCandles(sym){
+    try{
+        const r=await fetch('https://fapi.binance.com/fapi/v1/klines?symbol='+sym+'&interval=15m&limit=100');
+        if(!r.ok)return null;
+        const d=await r.json();
+        return Array.isArray(d)?d.map(k=>({open:+k[1],high:+k[2],low:+k[3],close:+k[4]})):null;
+    }catch(e){return null;}
+}
+function avgBody(c,f,t){return c.slice(f,t).reduce((s,x)=>s+Math.abs(x.close-x.open),0)/(t-f)||1;}
+function analyze(candles,name,price){
+    if(!candles||candles.length<30)return null;
+    const n=candles.length;let sH=[],sL=[];
+    for(let i=3;i<n-3;i++){
+        if(candles[i].high>candles[i-1].high&&candles[i].high>candles[i-2].high&&candles[i].high>candles[i+1].high&&candles[i].high>candles[i+2].high)sH.push({p:candles[i].high,i});
+        if(candles[i].low<candles[i-1].low&&candles[i].low<candles[i-2].low&&candles[i].low<candles[i+1].low&&candles[i].low<candles[i+2].low)sL.push({p:candles[i].low,i});
+    }
+    if(!sH.length||!sL.length)return null;
+    for(let i=20;i<n-2;i++){
+        const nl=sL.filter(s=>s.i<i&&s.i>i-25);if(!nl.length)continue;
+        const minL=Math.min(...nl.map(s=>s.p));
+        if(!(candles[i].low<minL&&candles[i].close>minL))continue;
+        const d=candles[i+1];if(!(d.close>d.open&&(d.close-d.open)>avgBody(candles,i-10,i)*1.5))continue;
+        const nh=sH.filter(s=>s.i<i&&s.i>i-25);if(!nh.length||!(d.close>nh[nh.length-1].p))continue;
+        let fB=null,fT=null;if(i+2<n){fB=candles[i].high;fT=candles[i+2].low;if(fT<=fB){fB=null;fT=null;}}
+        let oT=null,oB=null;for(let j=i;j>=Math.max(i-5,0);j--){if(candles[j].close<candles[j].open){oT=candles[j].open;oB=candles[j].close;break;}}
+        if(!oT)continue;
+        const zT=fT||oT,zB=fB||oB,entry=(zT+zB)/2;
+        if(price>=zB*0.995&&price<=zT*1.005){const sl=oB*0.997,tp=entry+(entry-sl)*2.5;return{pair:name,direction:'LONG',entry:entry.toFixed(2),sl:sl.toFixed(2),tp:tp.toFixed(2),rr:((tp-entry)/(entry-sl)).toFixed(1),reason:fT?'Sweep+BOS+FVG+OB':'Sweep+BOS+OB',time:new Date().toLocaleTimeString()};}
+    }
+    for(let i=20;i<n-2;i++){
+        const nh=sH.filter(s=>s.i<i&&s.i>i-25);if(!nh.length)continue;
+        const maxH=Math.max(...nh.map(s=>s.p));
+        if(!(candles[i].high>maxH&&candles[i].close<maxH))continue;
+        const d=candles[i+1];if(!(d.close<d.open&&(d.open-d.close)>avgBody(candles,i-10,i)*1.5))continue;
+        const nl=sL.filter(s=>s.i<i&&s.i>i-25);if(!nl.length||!(d.close<nl[nl.length-1].p))continue;
+        let fT=null,fB=null;if(i+2<n){fT=candles[i].low;fB=candles[i+2].high;if(fT<=fB){fT=null;fB=null;}}
+        let oT=null,oB=null;for(let j=i;j>=Math.max(i-5,0);j--){if(candles[j].close>candles[j].open){oT=candles[j].close;oB=candles[j].open;break;}}
+        if(!oT)continue;
+        const zT=fT||oT,zB=fB||oB,entry=(zT+zB)/2;
+        if(price>=zB*0.995&&price<=zT*1.005){const sl=oT*1.003,tp=entry-(sl-entry)*2.5;if(tp<=0)continue;return{pair:name,direction:'SHORT',entry:entry.toFixed(2),sl:sl.toFixed(2),tp:tp.toFixed(2),rr:((entry-tp)/(sl-entry)).toFixed(1),reason:fT?'Sweep+BOS+FVG+OB':'Sweep+BOS+OB',time:new Date().toLocaleTimeString()};}
+    }
+    return null;
+}
+function renderSetups(){
+    const c=document.getElementById('setups-container');
+    if(!activeSetups.length){c.innerHTML='<div class="no-setups">No ICT setups — scanning...</div>';return;}
+    c.innerHTML=activeSetups.map(s=>`<div class="setup-card ${s.direction==='SHORT'?'short':''}"><div class="setup-header"><span class="setup-pair">${s.pair}</span><span class="${s.direction==='LONG'?'long-badge':'short-badge'}">${s.direction==='LONG'?'▲ LONG':'▼ SHORT'}</span></div><div class="setup-levels"><div class="level-box"><span class="level-label">ENTRY</span><span class="level-value entry-val">${s.entry}</span></div><div class="level-box"><span class="level-label">SL</span><span class="level-value sl-val">${s.sl}</span></div><div class="level-box"><span class="level-label">TP</span><span class="level-value tp-val">${s.tp}</span></div></div><div class="setup-meta">${s.reason}<span class="rr-badge">RR ${s.rr}:1</span><span style="float:right">${s.time}</span></div></div>`).join('');
+}
+async function scan(){
+    document.getElementById('status-text').textContent='Scanning...';
+    activeSetups=[];
+    for(const pair of PAIRS){
+        const candles=await fetchCandles(pair.binance);
+        if(!candles){document.getElementById('price-'+pair.symbol).textContent='N/A';continue;}
+        const price=candles[candles.length-1].close;
+        updateCard(pair.symbol,price,candles[0].open);
+        const setup=analyze(candles,pair.name,price);
+        if(setup){activeSetups.push(setup);if(alertsEnabled)sendAlert(setup);}
+    }
+    renderSetups();
+    document.getElementById('status-text').textContent='Last scan: '+new Date().toLocaleTimeString()+' | '+activeSetups.length+' setup(s)';
+}
+initCards();scan();setInterval(scan,60000);
+</script>
+</body>
+</html>
